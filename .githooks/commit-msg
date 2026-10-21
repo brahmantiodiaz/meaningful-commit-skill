@@ -1,0 +1,8 @@
+#!/bin/sh
+# Git executes this on git commit, regardless of whether Claude, Codex or a
+# human issued the command. Use Git for Windows' bundled POSIX shell on Windows.
+if ! command -v node >/dev/null 2>&1; then
+  echo 'ERROR: Node.js >=18 is required by meaningful-commit hook.' >&2
+  exit 1
+fi
+node .commit-conventions/validate.mjs "$1"

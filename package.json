@@ -1,0 +1,16 @@
+{
+  "name": "meaningful-commit-skill",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared Claude Code + Codex commit skill and portable Git commit-msg hook",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "install:local": "node scripts/install.mjs --target .",
+    "check:commits": "node .commit-conventions/check-history.mjs"
+  },
+  "license": "MIT"
+}
