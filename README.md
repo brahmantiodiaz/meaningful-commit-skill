@@ -59,13 +59,24 @@ node scripts/install.mjs --target .
 ```
 
 **Important:** Git does not distribute `core.hooksPath` settings with
-commits. Each clone or developer must run the installer or enable the
-hook locally. The installed source files should be committed into the
-target project so other developers can access them.
+commits. Run the installer in each clone to enable the hook and restore
+its executable permissions. The installed source files should be committed
+into the target project so other developers can access them. When committing
+the generated hook from Windows, record its executable Git mode:
+
+```bash
+git add --chmod=+x .githooks/commit-msg
+```
+
+This keeps the hook executable when teammates clone on macOS/Linux.
 
 Existing target files are preserved unless `--force` is specified.
-An existing `core.hooksPath` or manually installed commit-msg hook is
-never overwritten automatically, even with `--force`. Integrate the
+An existing `core.hooksPath` from any Git configuration scope is preserved;
+the installer only accepts `.githooks`. Before switching from Git's default
+hook directory, it refuses non-sample hook files so existing `pre-commit`,
+`pre-push`, and other hooks keep running. A differing `commit-msg` hook is
+never overwritten, even with `--force`; identical hooks may have their line
+endings normalized to LF and executable permissions restored. Integrate the
 validator with existing Husky, lefthook, or other hooks manually.
 
 ## Usage
@@ -119,7 +130,9 @@ node .commit-conventions/check-history.mjs origin/main..HEAD
 ```
 
 Tests include real Git commit integration tests, not only parsing
-assertions. On PRs, CI can catch commits whose local hooks were bypassed.
+assertions, including preservation of existing hooks and configuration.
+CI runs the suite on Windows, macOS, and Linux with Node.js 18, 22, and 24.
+On PRs, CI can catch commits whose local hooks were bypassed.
 
 ## Limitations
 

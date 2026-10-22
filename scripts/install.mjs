@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Install the shared skill and Git hook into an existing git worktree. */
-import { chmodSync, mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ if (args.includes('--help') || !valueOf('--target')) {
 }
 
 const TARGET = path.resolve(valueOf('--target'));
+const HOOK = path.join(TARGET, '.githooks', 'commit-msg');
 const force = args.includes('--force');
 const ci = args.includes('--ci');
 const guidance = !args.includes('--no-agent-guidance');
@@ -32,7 +33,12 @@ function writeIfSafe(destination, content) {
   if (existsSync(destination)) {
     const previous = readFileSync(destination, 'utf8');
     if (previous === content) return false;
-    if (!force) throw new Error('Existing file differs: ' + destination + ' (use --force to replace)');
+    const hook = destination === HOOK;
+    // Only newline normalization is safe for a differing existing hook.
+    if (hook && previous.replace(/\r\n?/g, '\n') !== content) {
+      throw new Error('Existing file differs: ' + destination + ' (integrate commit-msg manually; --force does not replace hooks)');
+    }
+    if (!hook && !force) throw new Error('Existing file differs: ' + destination + ' (use --force to replace)');
   }
   return true;
 }
@@ -55,17 +61,22 @@ try {
   const root = path.resolve(git('rev-parse', '--show-toplevel'));
   if (root !== TARGET) throw new Error('Target must be the worktree root: ' + root);
   const configured = (() => {
-    try { return git('config', '--local', '--get', 'core.hooksPath'); }
-    catch { return ''; }
+    try { return git('config', '--get', 'core.hooksPath'); }
+    catch (error) {
+      if (error.status === 1) return null;
+      throw error;
+    }
   })();
-  if (configured && configured !== '.githooks') {
+  if (configured !== null && configured !== '.githooks') {
     throw new Error('core.hooksPath is already set to "' + configured + '". To avoid disabling existing hooks, installer stops. Integrate commit-msg manually or restore existing path first.');
   }
-  if (!configured) {
-    const activeHook = git('rev-parse', '--git-path', 'hooks/commit-msg');
-    const activePath = path.isAbsolute(activeHook) ? activeHook : path.join(TARGET, activeHook);
-    if (existsSync(activePath)) {
-      throw new Error('An existing Git commit-msg hook is present at ' + activePath + '. Installer will not silently replace it; manually chain validators.');
+  if (configured === null) {
+    const hooksDir = git('rev-parse', '--git-path', 'hooks');
+    const activePath = path.isAbsolute(hooksDir) ? hooksDir : path.join(TARGET, hooksDir);
+    const existing = existsSync(activePath) && readdirSync(activePath, { withFileTypes: true })
+      .find(entry => !entry.name.endsWith('.sample') && (entry.isFile() || entry.isSymbolicLink()));
+    if (existing) {
+      throw new Error('An existing Git hook is present at ' + path.join(activePath, existing.name) + '. Changing core.hooksPath would disable existing hooks; manually chain validators.');
     }
     const commonDir = git('rev-parse', '--git-common-dir');
     const gitDir = git('rev-parse', '--git-dir');
@@ -85,8 +96,9 @@ try {
     ...(ci ? [['examples/workflows/commit-policy.yml', '.github/workflows/commit-policy.yml']] : []),
   ];
   const changes = sources.map(([source, destination]) => {
-    const content = readFileSync(path.join(ROOT, source), 'utf8');
+    let content = readFileSync(path.join(ROOT, source), 'utf8');
     const dest = path.join(TARGET, destination);
+    if (dest === HOOK) content = content.replace(/\r\n?/g, '\n');
     return { dest, content, changed: writeIfSafe(dest, content) };
   });
   if (guidance) {
@@ -100,19 +112,23 @@ try {
     }
   }
   for (const { dest, content, changed } of changes) {
-    if (!changed) continue;
-    mkdirSync(path.dirname(dest), { recursive: true });
-    writeFileSync(dest, content, 'utf8');
-    if (path.basename(dest) === 'commit-msg' && path.dirname(dest) === path.join(TARGET, '.githooks')) {
-      chmodSync(dest, 0o755);
+    if (changed) {
+      mkdirSync(path.dirname(dest), { recursive: true });
+      writeFileSync(dest, content, 'utf8');
     }
+    // A clone can lose the executable bit even when the content matches.
+    if (dest === HOOK) chmodSync(dest, 0o755);
   }
-  if (!configured) git('config', '--local', 'core.hooksPath', '.githooks');
+  if (configured === null) git('config', '--local', 'core.hooksPath', '.githooks');
   console.log('Installed meaningful-commit into ' + TARGET);
   console.log('Git core.hooksPath = .githooks');
   console.log('Commit-msg validation applies to Claude, Codex and manual git commits.');
   console.log('Commit the generated skill/hook files if teammates need them.');
-  console.log('Each clone still needs: git config core.hooksPath .githooks');
+  console.log('Run the installer in each clone to enable hooks and restore executable permissions.');
+  if (process.platform === 'win32') {
+    console.log('When committing the hook from Windows, record its executable Git mode:');
+    console.log('  git add --chmod=+x .githooks/commit-msg');
+  }
 } catch (error) {
   console.error('Install aborted: ' + error.message);
   process.exit(1);

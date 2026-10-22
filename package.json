@@ -8,7 +8,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test",
     "install:local": "node scripts/install.mjs --target .",
     "check:commits": "node .commit-conventions/check-history.mjs"
   },
