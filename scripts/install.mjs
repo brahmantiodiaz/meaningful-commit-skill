@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Install the shared skill and Git hook into an existing git worktree. */
-import { chmodSync, mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,7 +59,8 @@ function annotate(file, skillLocation) {
 try {
   if (!existsSync(TARGET) || !statSync(TARGET).isDirectory()) throw new Error('Target is not a directory.');
   const root = path.resolve(git('rev-parse', '--show-toplevel'));
-  if (root !== TARGET) throw new Error('Target must be the worktree root: ' + root);
+  // Compare canonical paths: temp dirs can be symlinked (macOS /var) or 8.3 short names (Windows).
+  if (realpathSync.native(root) !== realpathSync.native(TARGET)) throw new Error('Target must be the worktree root: ' + root);
   const configured = (() => {
     try { return git('config', '--get', 'core.hooksPath'); }
     catch (error) {
